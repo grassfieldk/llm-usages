@@ -1,0 +1,14 @@
+[tools]
+python = "3.14.7"
+
+[tasks.setup]
+description = "依存パッケージをインストール"
+run = "python scripts/setup.py"
+
+[tasks.start]
+description = "通知領域に起動"
+run = "python scripts/start.py"
+
+[tasks.check]
+description = "実際の使用状況を取得"
+run = ".venv/Scripts/python.exe app.py --check"
