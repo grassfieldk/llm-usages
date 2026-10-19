@@ -95,8 +95,9 @@ def tray_icon(values):
     painter.setPen(Qt.PenStyle.NoPen)
     for i, (name, color) in enumerate((("Codex", "#3566f0"), ("Claude", "#d97757"))):
         usage = values.get(name)
-        if usage and usage.windows and not usage.error:
-            remaining = 100 - max(w.used for w in usage.windows)
+        window = next((w for w in usage.windows if w.name.endswith("5 時間")), None) if usage and not usage.error else None
+        if window:
+            remaining = 100 - window.used
             painter.setBrush(QColor(color))
             painter.drawRect(0, 2 + i * 16, round(remaining / 100 * 32), 12)
     painter.end()
