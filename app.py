@@ -26,7 +26,7 @@ if "--check" in sys.argv:
 
 from PySide6.QtCore import (QEasingCurve, QEvent, QObject, QParallelAnimationGroup, QPoint,
                             QPropertyAnimation, QSettings, Qt, QTimer, Signal)
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFileDialog, QGraphicsDropShadowEffect,
                               QHBoxLayout,
@@ -92,24 +92,13 @@ def tray_icon(values):
     pixmap = QPixmap(32, 32)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor("#202020"))
-    painter.drawRect(0, 0, 32, 32)
-    painter.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-    for i, (name, color) in enumerate((("Codex", "#ffffff"), ("Claude", "#ffffff"))):
-        x = 4 + i * 15
-        painter.setPen(QColor(color))
-        painter.drawText(x, 13, "C" if i == 0 else "A")
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#484848"))
-        painter.drawRect(x, 18, 10, 10)
+    for i, (name, color) in enumerate((("Codex", "#3566f0"), ("Claude", "#d97757"))):
         usage = values.get(name)
         if usage and usage.windows and not usage.error:
-            used = max(w.used for w in usage.windows)
+            remaining = 100 - max(w.used for w in usage.windows)
             painter.setBrush(QColor(color))
-            height = round((100 - used) / 100 * 10)
-            painter.drawRect(x, 28 - height, 10, height)
+            painter.drawRect(0, 2 + i * 16, round(remaining / 100 * 32), 12)
     painter.end()
     return QIcon(pixmap)
 
