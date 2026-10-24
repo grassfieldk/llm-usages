@@ -341,7 +341,7 @@ class App(QObject):
         self.values[usage.provider] = usage
         if not usage.error:
             self.previous[usage.provider] = usage
-        self.tray.setIcon(tray_icon(self.values))
+        self.tray.setIcon(tray_icon(self.previous))
         lines = ["LLM Usages"]
         for provider in ("Codex", "Claude"):
             result = self.values.get(provider)
