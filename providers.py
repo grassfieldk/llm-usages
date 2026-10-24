@@ -120,27 +120,53 @@ def codex_usage():
         process.stdout.close()
 
 
+def claude_token(path):
+    try:
+        credentials = json.loads(path.read_text(encoding="utf-8"))
+        return credentials["claudeAiOauth"]["accessToken"]
+    except (ValueError, KeyError, TypeError):
+        raise RuntimeError("Claude のログイン情報を確認できません") from None
+
+
+def claude_request(token):
+    request = urllib.request.Request("https://api.anthropic.com/api/oauth/usage", headers={
+        "Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20", "User-Agent": "LLM-Usages/0.1"})
+    try:
+        with urllib.request.urlopen(request, timeout=25) as reply:
+            return json.load(reply)
+    except urllib.error.HTTPError as error:
+        if error.code in (401, 403):
+            raise PermissionError() from None
+        if error.code == 429:
+            raise RuntimeError("取得が制限されています。しばらく待って更新してください") from None
+        raise RuntimeError(f"Claude の取得に失敗しました (HTTP {error.code})") from None
+
+
+def refresh_claude():
+    # Claude Code は起動時に期限切れのアクセストークンを更新して認証ファイルへ書き戻す
+    command = executable("claude")
+    if not command:
+        return
+    try:
+        subprocess.run([command, "auth", "status"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
 def claude_usage(credentials_path=""):
     config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude")))
     path = Path(credentials_path).expanduser() if credentials_path else config_dir / ".credentials.json"
     if not path.exists():
         raise RuntimeError("Claude Code にログインしてください")
     try:
-        credentials = json.loads(path.read_text(encoding="utf-8"))
-        token = credentials["claudeAiOauth"]["accessToken"]
-    except (ValueError, KeyError, TypeError):
-        raise RuntimeError("Claude のログイン情報を確認できません") from None
-    request = urllib.request.Request("https://api.anthropic.com/api/oauth/usage", headers={
-        "Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20", "User-Agent": "LLM-Usages/0.1"})
-    try:
-        with urllib.request.urlopen(request, timeout=25) as reply:
-            data = json.load(reply)
-    except urllib.error.HTTPError as error:
-        if error.code in (401, 403):
+        data = claude_request(claude_token(path))
+    except PermissionError:
+        refresh_claude()
+        try:
+            data = claude_request(claude_token(path))
+        except PermissionError:
             raise RuntimeError("Claude Code で再ログインしてください") from None
-        if error.code == 429:
-            raise RuntimeError("取得が制限されています。しばらく待って更新してください") from None
-        raise RuntimeError(f"Claude の取得に失敗しました (HTTP {error.code})") from None
     windows = []
     for key, label in (("five_hour", "5 時間"), ("seven_day", "週間"), ("seven_day_sonnet", "Sonnet / 週間"), ("seven_day_opus", "Opus / 週間")):
         item = data.get(key)
