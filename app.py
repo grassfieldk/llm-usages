@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 import json
 import math
+import os
 import subprocess
 import sys
 import time
@@ -450,6 +451,8 @@ class App(QObject):
 
 
 def main():
+    # 標準の DirectWrite はサブピクセル描画を止められないため FreeType でグレースケール描画する
+    os.environ.setdefault("QT_QPA_PLATFORM", "windows:fontengine=freetype")
     application = QApplication(sys.argv)
     application.setStyle("Fusion")
     application.setQuitOnLastWindowClosed(False)
