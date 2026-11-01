@@ -8,9 +8,11 @@ import math
 import os
 import subprocess
 import sys
+import threading
 import time
 import winreg
 
+import claude_auth
 from providers import Usage, executable, fetch
 
 
@@ -29,9 +31,9 @@ from PySide6.QtCore import (QEasingCurve, QEvent, QObject, QParallelAnimationGro
                             QPropertyAnimation, QSettings, Qt, QTimer, Signal)
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFileDialog, QGraphicsDropShadowEffect,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QGraphicsDropShadowEffect,
                               QHBoxLayout,
-                              QLabel, QLineEdit, QMenu, QProgressBar, QPushButton,
+                              QLabel, QMenu, QProgressBar, QPushButton,
                               QSpinBox, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 ASSETS = Path(__file__).resolve().parent / "assets"
@@ -63,6 +65,7 @@ QMenu::item:selected { background: #363636; }
 
 class Bridge(QObject):
     done = Signal(object)
+    logged_in = Signal(str)
 
 
 def reset_text(reset, now=None):
@@ -311,6 +314,7 @@ class App(QObject):
         self.pool = ThreadPoolExecutor(max_workers=2)
         self.bridge = Bridge()
         self.bridge.done.connect(self.received)
+        self.bridge.logged_in.connect(self.logged_in)
         self.popup = Popup(self)
         self.tray = QSystemTrayIcon(tray_icon({}), self)
         self.tray.setToolTip("LLM Usages / 取得中")
@@ -336,9 +340,8 @@ class App(QObject):
             return
         self.pending = {"Codex", "Claude"}
         self.popup.render()
-        credential_path = str(self.settings.value("claude_credentials", ""))
         for provider in ("Codex", "Claude"):
-            future = self.pool.submit(fetch, provider, credential_path)
+            future = self.pool.submit(fetch, provider)
             future.add_done_callback(lambda f: self.bridge.done.emit(f.result()))
 
     def received(self, usage: Usage):
@@ -375,12 +378,27 @@ class App(QObject):
         self.popup.appear(QPoint(x - SHADOW, max(area.top() + 8, y) - SHADOW))
 
     def login(self, provider):
-        command = executable("codex" if provider == "Codex" else "claude")
-        if not command:
-            self.tray.showMessage("LLM Usages", f"{provider} のコマンドが見つかりません")
+        if provider == "Claude":
+            threading.Thread(target=self.claude_login, daemon=True).start()
             return
-        args = [command, "login"] if provider == "Codex" else [command, "auth", "login"]
-        subprocess.Popen(args, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        command = executable("codex")
+        if not command:
+            self.tray.showMessage("LLM Usages", "Codex のコマンドが見つかりません")
+            return
+        subprocess.Popen([command, "login"], creationflags=subprocess.CREATE_NEW_CONSOLE)
+
+    def claude_login(self):
+        try:
+            claude_auth.login()
+            self.bridge.logged_in.emit("")
+        except Exception as error:
+            self.bridge.logged_in.emit(str(error) if isinstance(error, RuntimeError) else "Claude のログインに失敗しました")
+
+    def logged_in(self, error):
+        if error:
+            self.tray.showMessage("LLM Usages", error)
+        else:
+            self.refresh()
 
     def settings_dialog(self):
         dialog = QDialog(self.popup)
@@ -392,19 +410,6 @@ class App(QObject):
         interval.setRange(1, 60)
         interval.setValue(self.interval())
         layout.addWidget(interval)
-        layout.addWidget(QLabel("Claude の認証ファイル (空欄で自動検出)"))
-        row = QHBoxLayout()
-        credentials = QLineEdit(str(self.settings.value("claude_credentials", "")))
-        credentials.setPlaceholderText("~/.claude/.credentials.json")
-        row.addWidget(credentials)
-        browse = QPushButton("選択")
-        def choose():
-            path, _ = QFileDialog.getOpenFileName(dialog, "Claude の認証ファイル", str(Path.home()), "JSON (*.json)")
-            if path:
-                credentials.setText(path)
-        browse.clicked.connect(choose)
-        row.addWidget(browse)
-        layout.addLayout(row)
         startup = QCheckBox("Windows 起動時に起動")
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run") as key:
@@ -419,7 +424,7 @@ class App(QObject):
             button.clicked.connect(lambda checked=False, p=provider: self.login(p))
             logins.addWidget(button)
         layout.addLayout(logins)
-        note = QLabel("ログイン完了後、使用状況の画面で「更新」を押してください")
+        note = QLabel("Codex はログイン完了後、使用状況の画面で「更新」を押してください")
         note.setWordWrap(True)
         note.setObjectName("muted")
         layout.addWidget(note)
@@ -439,7 +444,6 @@ class App(QObject):
                 note.setText("起動設定を保存できませんでした")
                 return
             self.settings.setValue("interval", interval.value())
-            self.settings.setValue("claude_credentials", credentials.text().strip())
             self.timer.start(self.interval() * 60000)
             dialog.accept()
             self.refresh()

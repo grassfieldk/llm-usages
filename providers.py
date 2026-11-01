@@ -5,7 +5,6 @@ from datetime import datetime
 from pathlib import Path
 import json
 import math
-import os
 import queue
 import shutil
 import subprocess
@@ -13,6 +12,8 @@ import threading
 import time
 import urllib.error
 import urllib.request
+
+import claude_auth
 
 
 @dataclass
@@ -120,14 +121,6 @@ def codex_usage():
         process.stdout.close()
 
 
-def claude_token(path):
-    try:
-        credentials = json.loads(path.read_text(encoding="utf-8"))
-        return credentials["claudeAiOauth"]["accessToken"]
-    except (ValueError, KeyError, TypeError):
-        raise RuntimeError("Claude のログイン情報を確認できません") from None
-
-
 def claude_request(token):
     request = urllib.request.Request("https://api.anthropic.com/api/oauth/usage", headers={
         "Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20", "User-Agent": "LLM-Usages/0.1"})
@@ -142,31 +135,14 @@ def claude_request(token):
         raise RuntimeError(f"Claude の取得に失敗しました (HTTP {error.code})") from None
 
 
-def refresh_claude():
-    # Claude Code は起動時に期限切れのアクセストークンを更新して認証ファイルへ書き戻す
-    command = executable("claude")
-    if not command:
-        return
+def claude_usage():
     try:
-        subprocess.run([command, "auth", "status"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    except (OSError, subprocess.TimeoutExpired):
-        pass
-
-
-def claude_usage(credentials_path=""):
-    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude")))
-    path = Path(credentials_path).expanduser() if credentials_path else config_dir / ".credentials.json"
-    if not path.exists():
-        raise RuntimeError("Claude Code にログインしてください")
-    try:
-        data = claude_request(claude_token(path))
-    except PermissionError:
-        refresh_claude()
         try:
-            data = claude_request(claude_token(path))
+            data = claude_request(claude_auth.access_token())
         except PermissionError:
-            raise RuntimeError("Claude Code で再ログインしてください") from None
+            data = claude_request(claude_auth.access_token(force_refresh=True))
+    except PermissionError:
+        raise RuntimeError("Claude にログインしてください") from None
     windows = []
     for key, label in (("five_hour", "5 時間"), ("seven_day", "週間"), ("seven_day_sonnet", "Sonnet / 週間"), ("seven_day_opus", "Opus / 週間")):
         item = data.get(key)
@@ -179,9 +155,9 @@ def claude_usage(credentials_path=""):
     return Usage("Claude", windows)
 
 
-def fetch(provider, credentials_path=""):
+def fetch(provider):
     try:
-        return codex_usage() if provider == "Codex" else claude_usage(credentials_path)
+        return codex_usage() if provider == "Codex" else claude_usage()
     except Exception as error:
         message = str(error) if isinstance(error, RuntimeError) else "取得に失敗しました。接続と設定を確認してください"
         return Usage(provider, error=message)
