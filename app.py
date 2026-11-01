@@ -240,6 +240,10 @@ class Popup(QWidget):
             self.cards.addWidget(card)
         self.status.setText("取得中…" if self.owner.pending else f"{self.owner.interval()} 分ごとに更新")
         self.refresh.setEnabled(not self.owner.pending)
+        self.fit()
+        QTimer.singleShot(0, self.fit)
+
+    def fit(self):
         self.layout().activate()
         height = self.layout().totalHeightForWidth(self.width()) if self.layout().hasHeightForWidth() else self.layout().totalSizeHint().height()
         offset = QPoint(0, self.height() - height)
