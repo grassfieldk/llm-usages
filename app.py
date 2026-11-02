@@ -307,7 +307,7 @@ class App(QObject):
     def __init__(self, application):
         super().__init__()
         self.application = application
-        self.settings = QSettings("GrassfieldK", "LLM Usages")
+        self.settings = QSettings("LLMUsages", "LLM Usages")
         self.values = {}
         self.previous = {}
         self.pending = set()
@@ -466,14 +466,14 @@ def main():
     application.setQuitOnLastWindowClosed(False)
     application.setStyleSheet(STYLE)
     socket = QLocalSocket()
-    socket.connectToServer("GrassfieldK.LLMUsages")
+    socket.connectToServer("LLMUsages.Application")
     if socket.waitForConnected(300):
         socket.write(b"show")
         socket.waitForBytesWritten(300)
         return
     server = QLocalServer()
-    QLocalServer.removeServer("GrassfieldK.LLMUsages")
-    if not server.listen("GrassfieldK.LLMUsages"):
+    QLocalServer.removeServer("LLMUsages.Application")
+    if not server.listen("LLMUsages.Application"):
         raise SystemExit("アプリを起動できませんでした")
     app = App(application)
     def connection():
